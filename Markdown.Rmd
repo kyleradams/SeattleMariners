@@ -1,0 +1,134 @@
+---
+output: word_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls(all=TRUE))
+library(tidyverse)
+library(psych)
+teams <- read_csv('Teams.csv')
+
+teams$rundif <- teams$R - teams$RA
+teams.2002 <- teams %>% 
+    filter(yearID >= 2002) #No strikes since 1994 thankfully.
+teams.2002 <- teams.2002 %>% 
+    mutate(OBP = as.integer(H+BB+as.numeric(HBP)) / as.integer(AB+BB+as.numeric(HBP)+as.numeric(SF)) )
+teams.2002 <- teams.2002 %>% 
+    mutate(SLG = ((H-B2-B3-HR) + (2*B2) + (3*B3) + (4*HR)) / AB )
+teams.2002 <- teams.2002 %>% 
+    mutate(ISO = SLG - (H/AB))
+teams.2002$hpr <- teams.2002$H / teams.2002$R
+
+teams.2002$winpct <- teams.2002$W/162
+teams.2002 <- teams.2002 %>% 
+    mutate(pythagW = I(R^1.81) / (I(R^1.81)+I(RA^1.81)))
+minpct <- teams.2002 %>% 
+    filter(DivWin == 'Y' | WCWin == 'Y') %>% 
+    group_by(yearID) %>% 
+    summarise(minpct = min(winpct))
+teams.2002 <- teams.2002 %>% 
+    left_join(minpct, by = 'yearID')
+teams.2002 <- teams.2002 %>% 
+    mutate(singles = (H-B2-B3-HR))
+teams.2002 <- teams.2002 %>% 
+    mutate(exp_runs_by_hits = (0.24857*singles) + (0.79314*B2) + (0.89400*B3) + (1.44733*HR) )
+
+teams.2002 <- teams.2002 %>% 
+    mutate(exp_runs_by_hits_diff = R - exp_runs_by_hits )
+
+```
+#### What factors between the years of 2002-2016 lead to the Seattle Mariners becoming the team with the longest playoff drought in MLB?
+
+In baseball, and all professional sports, the top teams based on win/loss record make it to the playoffs.  Currently, the title for longest playoff drought in all of baseball is held by the Seattle Mariners, who have not made it to the playoffs since 2001.  I want to look at Mariners teams over the past 15 years to discover what has led to such a long period of mediocrity.  There are 3 primary topics I want to look at besides simply the amount of wins the Mariners have had over the past 15 years.  First, year-over-year, the minimum number of required wins to get into the playoffs changes.  Have the Mariners won enough games in any specific year which would have gotten them into the playoffs in a different year?  Second, over the course of a 162-game season, some amount of luck due to sequence of hits in an inning or runs in a game will be involved which influences a team’s overall win loss record.  Additionally, players cannot choose when to have hot or cold streaks, which could cause random wins or loses throughout the season, but should average out in the end.  Thus, rather than looking strictly at win/loss record, it is important to look at runs scored vs runs allowed.  This concept can be expressed formulaically through what is known as the Pythagorean Expectation.  (http://www.baseball-reference.com/bullpen/Pythagorean_Theorem_of_Baseball)  Have the Mariners performed below their Pythagorean expectation consistently?  Finally, I want to build upon the run differential equation.  Theoretically, a team could have 36 hits in a game and never score a run.  3 singles in a row to load the bases, then ground into a double play, then another single to load the bases again, then a strikeout.  This would be 4 hits in an inning, times 9 innings to get 36.  Have the mariners been victims of worse than average hit sequencing over the past 15 years?
+
+Over the last 15 years, a winning season in Seattle (baseball) has been a rarity.  In fact, the Mariners have had only 5 winning seasons since 2001, 2 of which were 2002 and 2003.  
+
+```{r one, echo=FALSE}
+teams.2002 %>% 
+    select(yearID, teamID, W, R, RA, pythagW, winpct, minpct) %>% 
+    filter(teamID == 'SEA') %>% 
+    ggplot(aes(yearID, winpct)) + 
+    geom_line(size=1.1) + 
+    geom_line(aes(y = minpct), colour="blue", size=1.1) +
+    #geom_hline(yintercept = 0.5410053) +
+    scale_x_continuous(breaks=c(2002:2015)) +
+    ggtitle("Since 2004, the Mariners have had only 1 year in which they had 
+    a higher winning pct than the weakest team to make the playoffs.") +
+         xlab("Year") + ylab("Win Percentage")
+
+```
+
+The black line is the Mariners win percentage in each year, and the blue line is the minimum win percentage required to reach the playoffs.  Only in 2007 did the Mariners eclipse the weakest team to reach the playoffs.  This is explained by the fact that in baseball there are different divisions and leagues, and the winner of each division automatically makes the playoffs, even if their record isn’t very good.  Since the Mariners are in a different division than the weakest team in 2007, they were out of luck.  We can also see that in some years such as 2014, and 2009, the Mariners may have had a strong enough record to reach the playoffs in a different year.  This may give some credibility to the Mariners recent past, but when looking at each team’s best recent year, the picture is more gloomy.
+
+```{r two, echo=FALSE}
+teams.2002 %>% 
+    filter(lgID == 'AL' | franchID == 'HOU') %>% 
+    group_by(franchID, yearID) %>% 
+    summarise(wins = W) %>% 
+    group_by(franchID) %>% 
+    filter(wins == max(wins)) %>% 
+    filter(yearID == max(yearID)) %>% 
+    mutate(barcolor = ifelse(franchID == 'SEA', 1, 0)) %>% 
+    ggplot(aes(reorder(franchID, wins), wins, fill = as.factor(barcolor))) + 
+    geom_bar(stat = "identity") +
+    theme(legend.position="none") +
+    geom_text(aes(label = yearID), vjust = -.5) + 
+    scale_y_continuous(breaks=seq(0,105,5)) +
+    ggtitle("Each American League team's highest number of wins in a season since 2002") +
+    xlab("Team") + ylab("Maximum wins")
+
+```
+
+I chose to show American League teams only because that is the league the Mariners are in, so these are the only teams the Mariners compete with to make the playoffs.  Not only have almost all teams achieved a higher number of wins in a season than the Mariners, they also almost all achieved their best season more recently.
+
+Since the baseball season is so long, fluctuations in statistics tend to even out over the course of the year, but this is not always the case.  Given an infinite amount of games, a team’s win-loss record would roughly converge to the point of 1 win above average for every 10 runs scored above runs allowed, as well as the inverse.  (For proof, please see regression “mod.1” in the EDA.)  Since 162 games is not infinite, we can find which teams have won or lost a number of games different than they were expected to.  Here is the Mariners actual win percentage tracked against their Pythagorean expectation.
+
+```{r three, echo=FALSE}
+teams.2002 %>% 
+    select(yearID, teamID, W, R, RA, pythagW, winpct, minpct) %>% 
+    filter(teamID == 'SEA') %>% 
+    ggplot(aes(yearID, winpct)) + 
+    geom_line(size=1.2) + 
+    geom_line(aes(y = pythagW), colour="blue", size=1.2) +
+    #geom_hline(yintercept = 0.5410053) +
+    scale_x_continuous(breaks=c(2002:2015)) +
+    ggtitle("Mariners win percentage in black, with Pythagorean expectation in blue") +
+    xlab("Year") + ylab("Win Percentage")
+
+```
+
+We can see that the only times the Mariners underperformed their expected wins, while still having a winning season, was in 2003 and 2014.  In fact, we can also see that the other winning seasons of 2007 and 2009 should be more attributed to luck than having a good team.  However, had the Mariners gotten just a little bit less unlucky in 2014, they should have made the playoffs that year.
+
+```{r four, echo=FALSE}
+teams.2002 %>% 
+    filter(lgID == 'AL', yearID == 2014) %>% 
+    mutate(barcolor = ifelse(WCWin == 'Y' | DivWin == 'Y', 1, ifelse(teamID == 'SEA', 2, 0))) %>% 
+    ggplot(aes(reorder(teamID, pythagW), pythagW, fill = as.factor(barcolor))) + 
+    geom_bar(stat = "identity") +
+    scale_fill_discrete(name="Legend",
+                        breaks=c("0", "1", "2"),
+                        labels=c("Missed Playoffs", "Reached Playoffs", "Mariners")) +
+    ggtitle("All 2014 American League teams sorted by Pythagorean expectation.
+    If the Mariners played to expectation in 2014, they would have made the playoffs.") +
+    xlab("Year") + ylab("Pythagorean Win Percentage")
+
+```
+
+Pythagorean expectation is built upon straight runs and runs allowed.  Over the past 15 years, the Mariners have been known to have a somewhat “anemic” offense.  On average, we expect every single to be worth 0.24857 runs, doubles to be worth 0.79314 runs, triples to be worth 0.89400 runs, and home runs to be worth 1.44733 runs.  (For proof, please see regression “mod.8” in the EDA.)  We can predict roughly how many runs a team should score, assuming normal sequencing of hits, using these values.  Although the players hitting abilities are partly to blame, the Mariners have been victims of some bad sequencing as well.  
+
+```{r five, echo=FALSE}
+teams.2002 %>% 
+    arrange(exp_runs_by_hits_diff) %>% 
+    select(yearID, teamID, R, exp_runs_by_hits, exp_runs_by_hits_diff) %>% 
+    filter(teamID == "SEA") %>% 
+    ggplot(aes(yearID, exp_runs_by_hits_diff)) + 
+    geom_bar(stat = "identity", position = "dodge", fill = "blue") +
+    scale_x_continuous(breaks=c(2002:2015)) +
+    ggtitle("Since 2008, the Mariners have consistently scored less runs than expected") +
+    xlab("Year") + ylab("Actual runs minus expected runs")
+
+```
+
+If the Mariners had scored runs at an expected level, they would’ve had roughly an additional win in 2014, and about 6 wins in 2009, which likely would have put them in a playoff position.
+
+In conclusion, the ineptitude of the Mariners over the past 15 years has not been all due to a lack of talent on the roster.  At the same time, it hasn’t all been due to bad luck from sequencing either.  The Mariners have had a special combination of bad luck during their somewhat talented years, and a lack of talent in their lucky years.  
